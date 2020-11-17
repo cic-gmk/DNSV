@@ -3,6 +3,7 @@
 import os, re, argparse, sys
 import numpy as np
 import pandas as pd
+import time
 
 USAGE="""\
 123
@@ -43,80 +44,89 @@ def svLen(sv_data):
         sv_len = 51
 
     return int(sv_len)
+def svEnd(sv_data):
+    data_grab = re.compile("^.*END=(?P<sv_end>-?[0-9]+).*$")
+    if 'END' in sv_data['INFO'].iloc[0]:
+        data_info = data_grab.search(sv_data['INFO'].iloc[0]).groupdict()
+        sv_end = data_info['sv_end']
+    else:
+        sv_end = sv_data['POS']
+    return int(sv_end)
 
-def judgeIfDenovo(father_sv,mother_sv,son_sv,refdist,typeignore,i):
+def judgeIfOverlap(start_1,end_1,start_2,end_2):
+    #start_1 < end_1 && start_2 < end_2
+    start_max = max(start_1,start_2)
+    end_min = min(end_1,end_2)
+    return start_max <= end_min
+def getStartAndEnd(start,end):
+    start,end = min(start,end),max(start,end)
+    return start,end
+def judgeNeighbour(bench_SVs,home_pos,compared_sv_chrom,compared_sv_start,compared_sv_end,compared_sv_type,typeignore):
+    flag = 0
+    if bench_SVs.xs(compared_sv_chrom)['POS'].shape == ():
+        pos_list = list([bench_SVs.xs(compared_sv_chrom)['POS']])
+    else:
+        pos_list = list(bench_SVs.xs(compared_sv_chrom)['POS'])
+
+    pos_list.append(home_pos)
+    pos_sort_list = sorted(pos_list)
+    home_loc = pos_sort_list.index(home_pos)
+    left_neighbour_loc = home_loc - 1
+    if home_loc + 1 < len(pos_sort_list):
+        right_neighbour_loc = home_loc + 1
+    else:
+        right_neighbour_loc = None
+    left_neighbour_origin_loc = pos_list.index(pos_sort_list[left_neighbour_loc])
+    if bench_SVs.xs(compared_sv_chrom)['POS'].shape == ():
+        left_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[left_neighbour_origin_loc]])
+        left_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[left_neighbour_origin_loc]])
+    else:
+        left_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).iloc[[left_neighbour_origin_loc]])
+        left_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).iloc[[left_neighbour_origin_loc]])
+    left_neighbour_start,left_neighbour_end = getStartAndEnd(pos_sort_list[left_neighbour_loc],left_neighbour_end)
+    if judgeIfOverlap(compared_sv_start, compared_sv_end, left_neighbour_start,left_neighbour_end):
+        if typeignore == False:
+            if left_neighbour_type == compared_sv_type:
+                flag = 1
+        else:
+            flag = 1
+    if flag == 0:
+        if right_neighbour_loc is not None:
+            right_neighbour_origin_loc = pos_list.index(pos_sort_list[right_neighbour_loc])
+            if bench_SVs.xs(compared_sv_chrom)['POS'].shape == ():
+                right_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[right_neighbour_origin_loc]])
+                right_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[right_neighbour_origin_loc]])
+            else:
+                right_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).iloc[[right_neighbour_origin_loc]])
+                right_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).iloc[[right_neighbour_origin_loc]])
+            right_neighbour_start,right_neighbour_end = getStartAndEnd(pos_sort_list[right_neighbour_loc],right_neighbour_end)
+            if judgeIfOverlap(compared_sv_start, compared_sv_end, right_neighbour_start,right_neighbour_end):
+                if typeignore == False:
+                    if right_neighbour_type == compared_sv_type:
+                        flag = 1
+                else:
+                    flag = 1
+    return flag
+
+def judgeIfDenovo(father_SVs,mother_SVs,son_SVs,refdist,typeignore,i):
     flag = 0
     # son_sv.shape[0]
-    son_sv_pos = son_sv['POS'][i]
-    son_sv_chrom = son_sv.index[i]
-    if typeignore == False:
-        son_sv_type = svType(son_sv.iloc[[i]])
+    son_sv_pos = int(son_SVs['POS'][i])
+    son_sv_chrom = son_SVs.index[i]
+    son_sv_end = svEnd(son_SVs.iloc[[i]])
+    son_sv_start,son_sv_end = getStartAndEnd(son_sv_pos, son_sv_end)
+    son_sv_type = svType(son_SVs.iloc[[i]])
     # if the chrom is the same
-    if son_sv_chrom in father_sv.index:
-        # if the chrom has not only one record
-        if father_sv.xs(son_sv_chrom)['POS'].shape == ():
-            father_list = list([father_sv.xs(son_sv_chrom)['POS']])
-        else:
-            father_list = list(father_sv.xs(son_sv_chrom)['POS'])
-        # add the son_sv_pos and sort them to find the neighbour location
-        father_list.append(son_sv_pos)
-        father_sort_list = sorted(father_list)
-        son_sv_loc = father_sort_list.index(son_sv_pos)
-        if abs(father_sort_list[son_sv_loc] - father_sort_list[son_sv_loc - 1]) < refdist:
-            if typeignore == False:
-                neighbour_origin_loc = father_list.index(father_sort_list[son_sv_loc - 1])
-                if father_sv.xs(son_sv_chrom)['POS'].shape == ():
-                    father_sv_type = svType(father_sv.xs(son_sv_chrom).to_frame().T.iloc[[neighbour_origin_loc]])
-                else:
-                    father_sv_type = svType(father_sv.xs(son_sv_chrom).iloc[[neighbour_origin_loc]])
-                if father_sv_type == son_sv_type:
-                    flag = 1
-            else:
-                flag = 1
-        elif son_sv_loc + 1 < len(father_sort_list):
-            if abs(father_sort_list[son_sv_loc] - father_sort_list[son_sv_loc + 1]) < refdist:
-                if typeignore == False:
-                    neighbour_origin_loc = father_list.index(father_sort_list[son_sv_loc + 1])
-                    if father_sv.xs(son_sv_chrom)['POS'].shape == ():
-                        father_sv_type = svType(father_sv.xs(son_sv_chrom).to_frame().T.iloc[[neighbour_origin_loc]])
-                    else:
-                        father_sv_type = svType(father_sv.xs(son_sv_chrom).iloc[[neighbour_origin_loc]])
-                    if father_sv_type == son_sv_type:
-                        flag = 1
-                else:
-                    flag = 1
+    if son_sv_chrom in father_SVs.index:
+        #
+        flag = judgeNeighbour(father_SVs,son_sv_start,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
+        if flag == 0:
+            flag = judgeNeighbour(father_SVs,son_sv_end,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
     if flag == 0:
-        if son_sv_chrom in mother_sv.index:
-            if mother_sv.xs(son_sv_chrom)['POS'].shape == ():
-                mother_list = list([mother_sv.xs(son_sv_chrom)['POS']])
-            else:
-                mother_list = list(mother_sv.xs(son_sv_chrom)['POS'])
-            mother_list.append(son_sv_pos)
-            mother_sort_list = sorted(mother_list)
-            son_sv_loc = mother_sort_list.index(son_sv_pos)
-            if abs(mother_sort_list[son_sv_loc] - mother_sort_list[son_sv_loc - 1]) < refdist:
-                if typeignore == False:
-                    neighbour_origin_loc = mother_list.index(mother_sort_list[son_sv_loc - 1])
-                    if mother_sv.xs(son_sv_chrom)['POS'].shape == ():
-                        mother_sv_type = svType(mother_sv.xs(son_sv_chrom).to_frame().T.iloc[[neighbour_origin_loc]])
-                    else:
-                        mother_sv_type = svType(mother_sv.xs(son_sv_chrom).iloc[[neighbour_origin_loc]])
-                    if mother_sv_type == son_sv_type:
-                        flag = 1
-                else:
-                    flag = 1
-            elif son_sv_loc + 1 < len(mother_sort_list):
-                if abs(mother_sort_list[son_sv_loc] - mother_sort_list[son_sv_loc + 1]) < refdist:
-                    if typeignore == False:
-                        neighbour_origin_loc = mother_list.index(mother_sort_list[son_sv_loc + 1])
-                        if mother_sv.xs(son_sv_chrom)['POS'].shape == ():
-                            mother_sv_type = svType(mother_sv.xs(son_sv_chrom).to_frame().T.iloc[[neighbour_origin_loc]])
-                        else:
-                            mother_sv_type = svType(mother_sv.xs(son_sv_chrom).iloc[[neighbour_origin_loc]])
-                        if mother_sv_type == son_sv_type:
-                            flag = 1
-                    else:
-                        flag = 1
+        if son_sv_chrom in mother_SVs.index:
+            flag = judgeNeighbour(mother_SVs,son_sv_start,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
+            if flag == 0:
+                flag = judgeNeighbour(mother_SVs,son_sv_end,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
 
     return flag
 
@@ -235,11 +245,11 @@ def parseArgs(argv):
     parser = argparse.ArgumentParser(prog="DNSV.py", description=USAGE, \
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument("father_sv", type=str, \
+    parser.add_argument("father_SVs", type=str, \
                         help="Input father's SVs")
-    parser.add_argument("mother_sv", type=str, \
+    parser.add_argument("mother_SVs", type=str, \
                         help="Input mother's SVs")
-    parser.add_argument("son_sv", type=str, \
+    parser.add_argument("son_SVs", type=str, \
                         help="Input son's SVs")
     parser.add_argument("-o", "--output", type=str, default=None, \
                         help="Output Name (son_sv_DNSV.csv)")
@@ -273,26 +283,26 @@ def parseArgs(argv):
 def runmain(argv):
     # father_sv, vcf_mother, vcf_son, out_dir, refdist, typeignore = False
     args = parseArgs(argv)
-    father_sv = readvcf(args.father_sv)
-    mother_sv = readvcf(args.mother_sv)
-    son_sv = readvcf(args.son_sv)
+    father_SVs = readvcf(args.father_SVs)
+    mother_SVs = readvcf(args.mother_SVs)
+    son_SVs = readvcf(args.son_SVs)
 
-    dnsv = pd.DataFrame(columns=son_sv.columns)
+    dnsv = pd.DataFrame(columns=son_SVs.columns)
     dnsv.index.name = 'CHROM'
 
     print('DNSV Detection Start!')
-    process_count = 0; process_path = son_sv.shape[0]/100
-    for i in range(son_sv.shape[0]):
+    process_count = 0; process_path = son_SVs.shape[0]/100
+    for i in range(son_SVs.shape[0]):
         if i >= process_path * process_count:
             process_bar(process_count+1)
             process_count = process_count + 1
 
-        flag = judgeIfDenovo(father_sv,mother_sv,son_sv,args.refdist,args.typeignore,i)
+        flag = judgeIfDenovo(father_SVs,mother_SVs,son_SVs,args.refdist,args.typeignore,i)
         if flag == 0:
-            dnsv = pd.concat([dnsv, son_sv.iloc[[i]]])
+            dnsv = pd.concat([dnsv, son_SVs.iloc[[i]]])
     print('DNSV Detection Done!')
     dnsv_filtered = dnsvFilter(dnsv=dnsv,precisionlimit=args.precisionlimit,sizemin=args.sizemin,typelimit=args.typelimit)
-    dnsv_filtered.to_csv(args.output)
+    dnsv_filtered.to_csv(args.output,index_label='CHROM')
     print('DNSV Filter Done!')
     if args.statistics is True:
         statistics_output = statistics(dnsv_filtered)
@@ -307,22 +317,7 @@ if __name__ == '__main__':
     runmain(sys.argv[1:])
     # python DNSV.py F:/things/long_reads/SV工作资料/sniffles/sniffles_father.vcf  F:/things/long_reads/SV工作资料/sniffles/sniffles_mother.vcf F:/things/long_reads/SV工作资料/sniffles/sniffles_son.vcf -o son_dnsv.csv --statistics True
     # readvcf(r'F:\things\long_reads\SV工作资料\pbsv\pbsv_father.vcf')
-
-    # runmain(r'F:\things\long_reads\SV工作资料\pbsv\pbsv_father.vcf',\
-    #            r'F:\things\long_reads\SV工作资料\pbsv\pbsv_mother.vcf',\
-    #            r'F:\things\long_reads\SV工作资料\pbsv\pbsv_son.vcf', \
-    #            r'F:\things\long_reads\SV工作资料\pbsv\pbsv_dnsv.csv', refdist=500,typeignore=False)
-
-    # runmain(r'F:\things\long_reads\SV工作资料\sniffles\sniffles_father.vcf',\
-    #            r'F:\things\long_reads\SV工作资料\sniffles\sniffles_mother.vcf', \
-    #             r'F:\things\long_reads\SV工作资料\sniffles\sniffles_son.vcf',\
-    #            r'F:\things\long_reads\SV工作资料\sniffles\sniffles_dnsv.csv',refdist=500,typeignore=False)
-
-    # runmain(r"F:\things\long_reads\SV工作资料\honey\pbhoneytailsresults\pbhoney_father_tails.vcf",\
-    #            r"F:\things\long_reads\SV工作资料\honey\pbhoneytailsresults\pbhoney_mother_tails.vcf", \
-    #             r"F:\things\long_reads\SV工作资料\honey\pbhoneytailsresults\pbhoney_son_tails.vcf",\
-    #            r'F:\things\long_reads\SV工作资料\honey\pbhoneytailsresults\pbhoney_dnsv.csv',refdist=500,typeignore=False)
-
-    
-    
+#     data = pd.read_csv(r'C:\Users\gmkly\Desktop\SV_about\honey\pbhoneytailsresults\pbhoney_dnsv.csv',)
+#     data = data.rename(columns={'index':'CHROM'})
+#     print(data)
     
