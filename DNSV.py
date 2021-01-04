@@ -3,11 +3,19 @@
 import os, re, argparse, sys
 import numpy as np
 import pandas as pd
-import time
+from SimpleCalculate import simpleStatistics
+from CompareOverlap import judgeNeighbour,getStartAndEnd
 
 USAGE="""\
 123
 """
+
+def readFile(file_name):
+    if 'vcf' in file_name:
+        data = readvcf(file_name)
+    else:
+        data = pd.read_csv(file_name,index_col='CHROM')
+    return data
 
 def readvcf(file_name):
     count_num = 0
@@ -24,13 +32,14 @@ def readvcf(file_name):
 
     return raw_data
 
+
 def svType(sv_data):
     data_grab = re.compile("^.*SVTYPE=(?P<sv_type>[a-zA-Z]+).*$")
     if 'SVTYPE' in sv_data['INFO'].iloc[0]:
         data_info = data_grab.search(sv_data['INFO'].iloc[0]).groupdict()
         sv_type = data_info['sv_type']
     else:
-        sv_type = 'NoType'
+        sv_type = 'None'
 
     return sv_type
 
@@ -53,62 +62,8 @@ def svEnd(sv_data):
         sv_end = sv_data['POS']
     return int(sv_end)
 
-def judgeIfOverlap(start_1,end_1,start_2,end_2):
-    #start_1 < end_1 && start_2 < end_2
-    start_max = max(start_1,start_2)
-    end_min = min(end_1,end_2)
-    return start_max <= end_min
-def getStartAndEnd(start,end):
-    start,end = min(start,end),max(start,end)
-    return start,end
-def judgeNeighbour(bench_SVs,home_pos,compared_sv_chrom,compared_sv_start,compared_sv_end,compared_sv_type,typeignore):
-    flag = 0
-    if bench_SVs.xs(compared_sv_chrom)['POS'].shape == ():
-        pos_list = list([bench_SVs.xs(compared_sv_chrom)['POS']])
-    else:
-        pos_list = list(bench_SVs.xs(compared_sv_chrom)['POS'])
 
-    pos_list.append(home_pos)
-    pos_sort_list = sorted(pos_list)
-    home_loc = pos_sort_list.index(home_pos)
-    left_neighbour_loc = home_loc - 1
-    if home_loc + 1 < len(pos_sort_list):
-        right_neighbour_loc = home_loc + 1
-    else:
-        right_neighbour_loc = None
-    left_neighbour_origin_loc = pos_list.index(pos_sort_list[left_neighbour_loc])
-    if bench_SVs.xs(compared_sv_chrom)['POS'].shape == ():
-        left_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[left_neighbour_origin_loc]])
-        left_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[left_neighbour_origin_loc]])
-    else:
-        left_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).iloc[[left_neighbour_origin_loc]])
-        left_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).iloc[[left_neighbour_origin_loc]])
-    left_neighbour_start,left_neighbour_end = getStartAndEnd(pos_sort_list[left_neighbour_loc],left_neighbour_end)
-    if judgeIfOverlap(compared_sv_start, compared_sv_end, left_neighbour_start,left_neighbour_end):
-        if typeignore == False:
-            if left_neighbour_type == compared_sv_type:
-                flag = 1
-        else:
-            flag = 1
-    if flag == 0:
-        if right_neighbour_loc is not None:
-            right_neighbour_origin_loc = pos_list.index(pos_sort_list[right_neighbour_loc])
-            if bench_SVs.xs(compared_sv_chrom)['POS'].shape == ():
-                right_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[right_neighbour_origin_loc]])
-                right_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).to_frame().T.iloc[[right_neighbour_origin_loc]])
-            else:
-                right_neighbour_end = svEnd(bench_SVs.xs(compared_sv_chrom).iloc[[right_neighbour_origin_loc]])
-                right_neighbour_type = svType(bench_SVs.xs(compared_sv_chrom).iloc[[right_neighbour_origin_loc]])
-            right_neighbour_start,right_neighbour_end = getStartAndEnd(pos_sort_list[right_neighbour_loc],right_neighbour_end)
-            if judgeIfOverlap(compared_sv_start, compared_sv_end, right_neighbour_start,right_neighbour_end):
-                if typeignore == False:
-                    if right_neighbour_type == compared_sv_type:
-                        flag = 1
-                else:
-                    flag = 1
-    return flag
-
-def judgeIfDenovo(father_SVs,mother_SVs,son_SVs,refdist,typeignore,i):
+def judgeIfDenovo(father_SVs,mother_SVs,son_SVs,refdist,typeignore,overlap_rate,i):
     flag = 0
     # son_sv.shape[0]
     son_sv_pos = int(son_SVs['POS'][i])
@@ -118,15 +73,14 @@ def judgeIfDenovo(father_SVs,mother_SVs,son_SVs,refdist,typeignore,i):
     son_sv_type = svType(son_SVs.iloc[[i]])
     # if the chrom is the same
     if son_sv_chrom in father_SVs.index:
-        #
-        flag = judgeNeighbour(father_SVs,son_sv_start,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
-        if flag == 0:
-            flag = judgeNeighbour(father_SVs,son_sv_end,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
+        flag = judgeNeighbour(father_SVs,son_sv_start,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
+        if son_sv_type != 'INS' and flag == 0:
+            flag = judgeNeighbour(father_SVs,son_sv_end,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
     if flag == 0:
         if son_sv_chrom in mother_SVs.index:
-            flag = judgeNeighbour(mother_SVs,son_sv_start,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
-            if flag == 0:
-                flag = judgeNeighbour(mother_SVs,son_sv_end,son_sv_chrom,son_sv_start-refdist,son_sv_end+refdist,son_sv_type,typeignore)
+            flag = judgeNeighbour(mother_SVs,son_sv_start,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
+            if son_sv_type != 'INS' and flag == 0:
+                flag = judgeNeighbour(mother_SVs,son_sv_end,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
 
     return flag
 
@@ -155,83 +109,7 @@ def dnsvFilter(dnsv,precisionlimit=True,sizemin=50,typelimit=True):
             continue
     # dnsv_filtered_data.to_csv(out_dir)
     return dnsv_filtered
-def sizeChromStatistics(certain_type_data):
-    # print(certain_type_data)
 
-    # print(certain_type_data['CHROM'].value_counts())
-    statistics_total = certain_type_data.shape[0]
-    statistics_100bp = 0
-    statistics_100bp_1kb = 0
-    statistics_1kb_100kb = 0
-    statistics_100kb = 0
-
-    for i in range(certain_type_data.shape[0]):
-        sv_len = abs(svLen(certain_type_data.iloc[[i]]))
-        if sv_len < 100:
-            statistics_100bp = statistics_100bp + 1
-        elif 100<=sv_len<1000:
-            statistics_100bp_1kb = statistics_100bp_1kb + 1
-        elif 1000<=sv_len<1000000:
-            statistics_1kb_100kb = statistics_1kb_100kb + 1
-        elif sv_len>=1000000:
-            statistics_100kb = statistics_100kb + 1
-    #chr1 to chr22
-    chrom_part = []
-    for i in range(1,23):
-        if 'chr'+str(i) in certain_type_data.index:
-            chrom_part.append(certain_type_data.index.value_counts()['chr'+str(i)])
-        else:
-            chrom_part.append(0)
-    #chrX chrY & Other Chroms
-    if 'chrX' in certain_type_data.index:
-        chrom_part.append(certain_type_data.index.value_counts()['chrX'])
-    else:
-        chrom_part.append(0)
-    if 'chrY' in certain_type_data.index:
-        chrom_part.append(certain_type_data.index.value_counts()['chrY'])
-    else:
-        chrom_part.append(0)
-    chrom_part.append(statistics_total-sum(chrom_part))
-    statistics_list = [statistics_total,statistics_100bp,statistics_100bp_1kb,statistics_1kb_100kb,statistics_100kb]
-    statistics_list.extend(chrom_part)
-
-    return statistics_list
-def statistics(sv_data):
-    # if 'vcf' in file_name:
-    #     sv_data = readvcf(file_name)
-    # else:
-    #     sv_data = pd.read_csv(file_name,index_col='CHROM')
-
-    INS_data = pd.DataFrame(columns=sv_data.columns)
-    DEL_data = pd.DataFrame(columns=sv_data.columns)
-    other_type_data = pd.DataFrame(columns=sv_data.columns)
-
-    statistics_output_index = ['INS', 'DEL', 'Other Types', 'Total']
-    statistics_output_columns = ['Total', 'size<100bp', '100bp<=size<1kb', '1kb<=size<100kb','size>=100kb']
-    statistics_output_columns.extend(['chr' + str(i) for i in range(1, 23)])
-    statistics_output_columns.extend(['chrX','chrY','Other Chroms'])
-
-    statistics_output = pd.DataFrame(index=statistics_output_index, columns=statistics_output_columns)
-
-    for i in range(sv_data.shape[0]):
-        try:
-            sv_type = svType(sv_data.iloc[[i]])
-            if sv_type == 'INS':
-                INS_data = pd.concat([INS_data, sv_data.iloc[[i]]])
-            elif sv_type == 'DEL':
-                DEL_data = pd.concat([DEL_data, sv_data.iloc[[i]]])
-            else:
-                other_type_data = pd.concat([other_type_data, sv_data.iloc[[i]]])
-        except:
-            print('Data Format Error Loc: %s ' % (i + 1))
-            continue
-
-    statistics_output.loc['INS']=sizeChromStatistics(INS_data)
-    statistics_output.loc['DEL']=sizeChromStatistics(DEL_data)
-    statistics_output.loc['Other Types'] = sizeChromStatistics(other_type_data)
-    statistics_output.loc['Total'] = sizeChromStatistics(sv_data)
-
-    return statistics_output
 
 def process_bar(i):
     num = i // 2
@@ -256,12 +134,14 @@ def parseArgs(argv):
     parser.add_argument("--statistics", type=bool, default=False, \
                         help="Whether the statistics of DNSVs is needed (False)")
     thresg = parser.add_argument_group("Comparison Threshold Arguments")
-    thresg.add_argument("-r", "--refdist", type=int, default=500, \
+    thresg.add_argument("-r", "--refdist", type=int, default=200, \
                         help="Max reference location distance (%(default)dbp)")
     thresg.add_argument("-t", "--typeignore", type=bool, default=False, \
                         help="Variant types don't need to match to compare (False)")
+    thresg.add_argument("-O", "--overlap_rate", type=float, default=0.5, \
+                        help="Reciprocal overlaps with the reference SVs (0.5)")
     filteg = parser.add_argument_group("Filtering Arguments")
-    filteg.add_argument("-p", "--precisionlimit", type=bool, default=True, \
+    filteg.add_argument("-p", "--precisionlimit", type=bool, default=False, \
                         help="Limit the precision description in INFO column")
     filteg.add_argument("-s", "--sizemin", type=int, default=50, \
                         help="Minimum DNSV size (%(default)dbp)")
@@ -280,12 +160,14 @@ def parseArgs(argv):
         args.output = output_main + "_DNSV.csv"
 
     return args
+
 def runmain(argv):
     # father_sv, vcf_mother, vcf_son, out_dir, refdist, typeignore = False
     args = parseArgs(argv)
-    father_SVs = readvcf(args.father_SVs)
-    mother_SVs = readvcf(args.mother_SVs)
-    son_SVs = readvcf(args.son_SVs)
+
+    father_SVs  = readFile(args.father_SVs)
+    mother_SVs  = readFile(args.mother_SVs)
+    son_SVs  = readFile(args.son_SVs)
 
     dnsv = pd.DataFrame(columns=son_SVs.columns)
     dnsv.index.name = 'CHROM'
@@ -293,19 +175,23 @@ def runmain(argv):
     print('DNSV Detection Start!')
     process_count = 0; process_path = son_SVs.shape[0]/100
     for i in range(son_SVs.shape[0]):
+
         if i >= process_path * process_count:
             process_bar(process_count+1)
             process_count = process_count + 1
-
-        flag = judgeIfDenovo(father_SVs,mother_SVs,son_SVs,args.refdist,args.typeignore,i)
-        if flag == 0:
-            dnsv = pd.concat([dnsv, son_SVs.iloc[[i]]])
+        try:
+            flag = judgeIfDenovo(father_SVs,mother_SVs,son_SVs,args.refdist,args.typeignore,args.overlap_rate,i)
+            if flag == 0:
+                dnsv = pd.concat([dnsv, son_SVs.iloc[[i]]])
+        except:
+            print(i)
+            continue
     print('DNSV Detection Done!')
     dnsv_filtered = dnsvFilter(dnsv=dnsv,precisionlimit=args.precisionlimit,sizemin=args.sizemin,typelimit=args.typelimit)
     dnsv_filtered.to_csv(args.output,index_label='CHROM')
     print('DNSV Filter Done!')
     if args.statistics is True:
-        statistics_output = statistics(dnsv_filtered)
+        statistics_output = simpleStatistics(dnsv_filtered)
         output_main = args.output[:args.output.rindex('.')]
         statistics_output_path = output_main+'_statistics.csv'
         statistics_output.to_csv(statistics_output_path)
@@ -315,9 +201,3 @@ def runmain(argv):
 
 if __name__ == '__main__':
     runmain(sys.argv[1:])
-    # python DNSV.py F:/things/long_reads/SV工作资料/sniffles/sniffles_father.vcf  F:/things/long_reads/SV工作资料/sniffles/sniffles_mother.vcf F:/things/long_reads/SV工作资料/sniffles/sniffles_son.vcf -o son_dnsv.csv --statistics True
-    # readvcf(r'F:\things\long_reads\SV工作资料\pbsv\pbsv_father.vcf')
-#     data = pd.read_csv(r'C:\Users\gmkly\Desktop\SV_about\honey\pbhoneytailsresults\pbhoney_dnsv.csv',)
-#     data = data.rename(columns={'index':'CHROM'})
-#     print(data)
-    
