@@ -12,7 +12,7 @@ python DNSV.py father.vcf mother.vcf son.vcf -o dnsv.csv --statistics True
 ### Parameters
 
 ```
-Usage: python DNSV.py [options] father.vcf mother.vcf son.vcf [-o <output>]
+Usage: python DNSV.py [options] father.vcf mother.vcf son.vcf -o dnsv.csv
 
 positional arguments:
   father_SVs            Input father's SVs
