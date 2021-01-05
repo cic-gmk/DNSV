@@ -1,5 +1,5 @@
 ### DNSV
-A tool for potential de novo variation detections from structural variations.
+A tool for potential de novo structural variations from structural variations.
 ### Quick start
 
 Download the files and set the appropriate work path.
