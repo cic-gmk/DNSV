@@ -6,7 +6,7 @@ import pandas as pd
 from SimpleCalculate import simpleStatistics
 from CompareOverlap import judgeNeighbour,getStartAndEnd
 
-
+USAGE = 'Usage: python DNSV.py [options] father.vcf mother.vcf son.vcf -o dnsv.csv'
 def readFile(file_name):
     if 'vcf' in file_name:
         data = readvcf(file_name)
@@ -198,3 +198,4 @@ def runmain(argv):
 
 if __name__ == '__main__':
     runmain(sys.argv[1:])
+#python DNSV.py F:\things\long_reads\SV工作资料\AJtrio\sniffles\docs\father_test.csv F:\things\long_reads\SV工作资料\AJtrio\sniffles\docs\mother_test.csv F:\things\long_reads\SV工作资料\AJtrio\sniffles\docs\son_test.csv -o F:\things\long_reads\SV工作资料\AJtrio\sniffles\docs\dnsv_test.csv --statistics True
