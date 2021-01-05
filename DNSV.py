@@ -6,9 +6,6 @@ import pandas as pd
 from SimpleCalculate import simpleStatistics
 from CompareOverlap import judgeNeighbour,getStartAndEnd
 
-USAGE="""\
-123
-"""
 
 def readFile(file_name):
     if 'vcf' in file_name:
