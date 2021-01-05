@@ -5,10 +5,9 @@ A tool for potential de novo variation detections from structural variations.
 Download the files and set the appropriate work path.
 
 The vcf/csv SVs files of a trio are needed. The details of data format are referred in docs.
-
+```
 python DNSV.py father.vcf mother.vcf son.vcf -o dnsv.csv --statistics True
-
-
+```
 ### Parameters
 
 ```
