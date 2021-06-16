@@ -3,7 +3,6 @@
 import os, re
 import numpy as np
 import pandas as pd
-from _ast import If
 
 
 def svLen(sv_data):

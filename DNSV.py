@@ -5,79 +5,32 @@ import numpy as np
 import pandas as pd
 from SimpleCalculate import simpleStatistics
 from CompareOverlap import judgeNeighbour,getStartAndEnd
+from ReadUtils import readFile,svType,svLen,svEnd,processBar
 
-USAGE = 'Usage: python DNSV.py [options] father.vcf mother.vcf son.vcf -o dnsv.csv'
-def readFile(file_name):
-    if 'vcf' in file_name:
-        data = readvcf(file_name)
-    else:
-        data = pd.read_csv(file_name,index_col='CHROM')
-    return data
-
-def readvcf(file_name):
-    count_num = 0
-    with open(file_name,'r') as f1:
-        for row in f1:
-            if '#' in row:
-                count_num = count_num + 1
-            else:
-                break
-#     print(count_num)
-    raw_data = pd.read_csv(file_name,skiprows=count_num-1,sep='\t')
-    raw_data = raw_data.set_index('#CHROM')
-    raw_data.index.name = 'CHROM'
-
-    return raw_data
-
-
-def svType(sv_data):
-    data_grab = re.compile("^.*SVTYPE=(?P<sv_type>[a-zA-Z]+).*$")
-    if 'SVTYPE' in sv_data['INFO'].iloc[0]:
-        data_info = data_grab.search(sv_data['INFO'].iloc[0]).groupdict()
-        sv_type = data_info['sv_type']
-    else:
-        sv_type = 'None'
-
-    return sv_type
-
-def svLen(sv_data):
-    data_grab = re.compile("^.*SVLEN=(?P<sv_len>-?[0-9]+).*$")
-    if 'SVLEN' in sv_data['INFO'].iloc[0]:
-        data_info = data_grab.search(sv_data['INFO'].iloc[0]).groupdict()
-        sv_len = data_info['sv_len']
-    else:
-        # if the sv_type is not DEL, INS, DUP or INV, we prefer to preserve it thus default sv_len 51 (>50).
-        sv_len = 51
-
-    return int(sv_len)
-def svEnd(sv_data):
-    data_grab = re.compile("^.*END=(?P<sv_end>-?[0-9]+).*$")
-    if 'END' in sv_data['INFO'].iloc[0]:
-        data_info = data_grab.search(sv_data['INFO'].iloc[0]).groupdict()
-        sv_end = data_info['sv_end']
-    else:
-        sv_end = sv_data['POS']
-    return int(sv_end)
-
+USAGE = 'Usage: python DNSV.py [options] father.vcf mother.vcf son.vcf -o dnsv.csv --statistics True'
 
 def judgeIfDenovo(father_SVs,mother_SVs,son_SVs,refdist,typeignore,overlap_rate,i):
     flag = 0
     # son_sv.shape[0]
     son_sv_pos = int(son_SVs['POS'][i])
-    son_sv_chrom = son_SVs.index[i]
+    son_sv_chrom = str(son_SVs.index[i])
     son_sv_end = svEnd(son_SVs.iloc[[i]])
     son_sv_start,son_sv_end = getStartAndEnd(son_sv_pos, son_sv_end)
     son_sv_type = svType(son_SVs.iloc[[i]])
     # if the chrom is the same
     if son_sv_chrom in father_SVs.index:
-        flag = judgeNeighbour(father_SVs,son_sv_start,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
-        if son_sv_type != 'INS' and flag == 0:
-            flag = judgeNeighbour(father_SVs,son_sv_end,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
+        global bench_father_dict
+        bench_father_df = bench_father_dict[son_sv_chrom]
+        flag = judgeNeighbour(bench_father_df,son_sv_start,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
+        if flag == 0 and son_sv_type not in ['INS','None']:
+            flag = judgeNeighbour(bench_father_df,son_sv_end,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
     if flag == 0:
         if son_sv_chrom in mother_SVs.index:
-            flag = judgeNeighbour(mother_SVs,son_sv_start,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
-            if son_sv_type != 'INS' and flag == 0:
-                flag = judgeNeighbour(mother_SVs,son_sv_end,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
+            global bench_mother_dict
+            bench_mother_df = bench_mother_dict[son_sv_chrom]
+            flag = judgeNeighbour(bench_mother_df,son_sv_start,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
+            if flag == 0 and son_sv_type not in ['INS','None']:
+                flag = judgeNeighbour(bench_mother_df,son_sv_end,son_sv_chrom,son_sv_start,son_sv_end,son_sv_type,typeignore,refdist,overlap_rate)
 
     return flag
 
@@ -107,14 +60,15 @@ def dnsvFilter(dnsv,precisionlimit=True,sizemin=50,typelimit=True):
     # dnsv_filtered_data.to_csv(out_dir)
     return dnsv_filtered
 
-
-def process_bar(i):
-    num = i // 2
-    if i == 100:
-        process = "\r[%3s%%]: |%-50s|\n" % (i, '|' * num)
-    else:
-        process = "\r[%3s%%]: |%-50s|" % (i, '|' * num)
-    print(process, end='', flush=True)
+def preProcessFatherAndMotherData(bench_father_data,bench_mother_data):
+    global bench_father_dict
+    bench_father_dict = {}
+    for chrom in bench_father_data.index:
+        bench_father_dict[chrom] = bench_father_data.xs(chrom).sort_values(by = 'POS')
+    global bench_mother_dict
+    bench_mother_dict = {}
+    for chrom in bench_mother_data.index:
+        bench_mother_dict[chrom] = bench_mother_data.xs(chrom).sort_values(by = 'POS')
 
 def parseArgs(argv):
     parser = argparse.ArgumentParser(prog="DNSV.py", description=USAGE, \
@@ -165,7 +119,10 @@ def runmain(argv):
     father_SVs  = readFile(args.father_SVs)
     mother_SVs  = readFile(args.mother_SVs)
     son_SVs  = readFile(args.son_SVs)
-
+    print("Initialization Start!")
+    preProcessFatherAndMotherData(father_SVs,mother_SVs)
+    print("Initialization Done!")
+    
     dnsv = pd.DataFrame(columns=son_SVs.columns)
     dnsv.index.name = 'CHROM'
 
@@ -174,7 +131,7 @@ def runmain(argv):
     for i in range(son_SVs.shape[0]):
 
         if i >= process_path * process_count:
-            process_bar(process_count+1)
+            processBar(process_count)
             process_count = process_count + 1
         try:
             flag = judgeIfDenovo(father_SVs,mother_SVs,son_SVs,args.refdist,args.typeignore,args.overlap_rate,i)
@@ -183,6 +140,7 @@ def runmain(argv):
         except:
             print(i)
             continue
+    processBar(100)
     print('DNSV Detection Done!')
     dnsv_filtered = dnsvFilter(dnsv=dnsv,precisionlimit=args.precisionlimit,sizemin=args.sizemin,typelimit=args.typelimit)
     dnsv_filtered.to_csv(args.output,index_label='CHROM')
