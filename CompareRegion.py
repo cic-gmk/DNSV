@@ -49,7 +49,7 @@ def judgeNeighbour(bench_df,home_pos,compared_sv_chrom,compared_sv_start,compare
     if left_neighbour_loc is not None:
         if bench_df['POS'].shape == ():
             left_neighbour_end = svEnd(bench_df.to_frame().T.iloc[[left_neighbour_loc]])
-            left_neighbour_type = svType(bench_df.to_frame().T.iloc[[left_neighbour_origin_loc]])
+            left_neighbour_type = svType(bench_df.to_frame().T.iloc[[left_neighbour_loc]])
         else:
             left_neighbour_end = svEnd(bench_df.iloc[[left_neighbour_loc]])
             left_neighbour_type = svType(bench_df.iloc[[left_neighbour_loc]])
@@ -66,7 +66,7 @@ def judgeNeighbour(bench_df,home_pos,compared_sv_chrom,compared_sv_start,compare
     if right_neighbour_loc is not None:
         if bench_df['POS'].shape == ():
             right_neighbour_end = svEnd(bench_df.to_frame().T.iloc[[right_neighbour_loc]])
-            right_neighbour_type = svType(bench_df.to_frame().T.iloc[[right_neighbour_origin_loc]])
+            right_neighbour_type = svType(bench_df.to_frame().T.iloc[[right_neighbour_loc]])
         else:
             right_neighbour_end = svEnd(bench_df.iloc[[right_neighbour_loc]])
             right_neighbour_type = svType(bench_df.iloc[[right_neighbour_loc]])
@@ -96,13 +96,12 @@ def judgeIfSame(data_1,data_2,refdist,typeignore,i):
             flag = judgeNeighbour(bench_df,data_1_sv_end,data_1_sv_chrom,data_1_sv_start,data_1_sv_end,data_1_sv_type,typeignore,refdist)
    
     return flag 
-
 def preProcessData(bench_data):
     global bench_dict
     bench_dict = {}
     for chrom in bench_data.index:
         bench_dict[chrom] = bench_data.xs(chrom).sort_values(by = 'POS')
-        
+
 def compareTwo(file_name_1,file_name_2,out_dir,refdist,typeignore=False):
     # SV_1
     data_1  = readFile(file_name_1)

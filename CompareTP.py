@@ -52,8 +52,8 @@ def judgeNeighbour(bench_df,home_pos,compared_sv_chrom,compared_sv_start,compare
     if left_neighbour_loc is not None:
         if bench_df['POS'].shape == ():
             left_neighbour_end = svEnd(bench_df.to_frame().T.iloc[[left_neighbour_loc]])
-            left_neighbour_type = svType(bench_df.to_frame().T.iloc[[left_neighbour_origin_loc]])           
-            the_TP = bench_df.to_frame().T.iloc[[left_neighbour_origin_loc]]
+            left_neighbour_type = svType(bench_df.to_frame().T.iloc[[left_neighbour_loc]])           
+            the_TP = bench_df.to_frame().T.iloc[[left_neighbour_loc]]
         else:
             left_neighbour_end = svEnd(bench_df.iloc[[left_neighbour_loc]])
             left_neighbour_type = svType(bench_df.iloc[[left_neighbour_loc]])
@@ -71,8 +71,8 @@ def judgeNeighbour(bench_df,home_pos,compared_sv_chrom,compared_sv_start,compare
     if right_neighbour_loc is not None:
         if bench_df['POS'].shape == ():
             right_neighbour_end = svEnd(bench_df.to_frame().T.iloc[[right_neighbour_loc]])
-            right_neighbour_type = svType(bench_df.to_frame().T.iloc[[right_neighbour_origin_loc]])
-            the_TP = bench_df.to_frame().T.iloc[[right_neighbour_origin_loc]]
+            right_neighbour_type = svType(bench_df.to_frame().T.iloc[[right_neighbour_loc]])
+            the_TP = bench_df.to_frame().T.iloc[[right_neighbour_loc]]
         else:
             right_neighbour_end = svEnd(bench_df.iloc[[right_neighbour_loc]])
             right_neighbour_type = svType(bench_df.iloc[[right_neighbour_loc]])
