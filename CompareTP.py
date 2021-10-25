@@ -4,6 +4,7 @@ import os, re
 import numpy as np
 import pandas as pd
 from ReadUtils import readFile,svType,svLen,svEnd,processBar
+from SimpleCalculate import simpleStatistics
 
 
 def judgeIfOverlap(start_1,end_1,start_2,end_2,sv_type,refdist,overlap_rate=0.5):
