@@ -99,7 +99,7 @@ def judgeIfSame(data_1,data_2,refdist,typeignore,i):
 def preProcessData(bench_data):
     global bench_dict
     bench_dict = {}
-    for chrom in bench_data.index:
+    for chrom in set(bench_data.index.tolist()):
         bench_dict[chrom] = bench_data.xs(chrom).sort_values(by = 'POS')
 
 def compareTwo(file_name_1,file_name_2,out_dir,refdist,typeignore=False):
