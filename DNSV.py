@@ -63,11 +63,11 @@ def dnsvFilter(dnsv,precisionlimit=True,sizemin=50,typelimit=True):
 def preProcessFatherAndMotherData(bench_father_data,bench_mother_data):
     global bench_father_dict
     bench_father_dict = {}
-    for chrom in bench_father_data.index:
+    for chrom in set(bench_father_data.index.tolist()):
         bench_father_dict[chrom] = bench_father_data.xs(chrom).sort_values(by = 'POS')
     global bench_mother_dict
     bench_mother_dict = {}
-    for chrom in bench_mother_data.index:
+    for chrom in set(bench_mother_data.index.tolist()):
         bench_mother_dict[chrom] = bench_mother_data.xs(chrom).sort_values(by = 'POS')
 
 def parseArgs(argv):
